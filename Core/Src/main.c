@@ -1,28 +1,14 @@
-/* USER CODE BEGIN Header */
-/**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include"bl_jump.h"
-
+#include "bl_jump.h"
+#include <string.h>
+#include "bl_ota.h"
+#include "ota_image.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -58,6 +44,26 @@ static void MX_USART2_UART_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+static uint32_t mem_base = 0;  // used with external or dual flash
+static uint32_t mem_cursor = 0;
+static uint32_t ota_image_total_size = 16;  // expected OTA Header size
+
+void ota_mem_set_total_size(uint32_t size)
+{
+    ota_image_total_size = size;
+}
+
+int ota_read_mem(uint8_t *buf, uint32_t len)
+{
+    if (mem_cursor + len > ota_image_total_size)
+        return -1;
+
+    memcpy(buf, &ota_image_bin[mem_base + mem_cursor], len);  // this function should be replaced accordingly
+
+    mem_cursor += len;
+    return 0;
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -91,11 +97,72 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
+
   HAL_Delay(100);
-  HAL_UART_Transmit(&huart2, (uint8_t*)"Inside Bootloader!!\r\n", 22, 100);
+
+  HAL_UART_Transmit(&huart2, (uint8_t *)"Inside Bootloader!!\r\n", 21, 100);
+
+  if (check_ota_request() == 0)
+  {
+	  HAL_UART_Transmit(&huart2, (uint8_t *)"Performing OTA...\n", 18, 100);
+
+	  ota_stream_t stream =
+	  {
+	      .read = ota_read_mem,
+	      .set_total_size = ota_mem_set_total_size
+	  };
+
+	  bl_ota_ctx_t ctx;
+	 if (bl_ota_run(&ctx, &stream) != 0)
+	 {
+		 HAL_UART_Transmit(&huart2, (uint8_t *)"OTA Failed...\n", 14, 100);
+		  while (1)
+		  {
+			  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+			  HAL_Delay(250);
+		  }
+	 }
+	 else {
+		 HAL_UART_Transmit(&huart2, (uint8_t *)"OTA Flashed Successfully, Jumping to app...\n", 44, 100);
+	 }
+
+  }
+  int err = bootloader_is_app_valid();
+  if (err != 0)
+  {
+	  HAL_UART_Transmit(&huart2, (uint8_t *)"Failed to Jump!! ", 17, 100);
+	  switch (err){
+	  case 1:
+		  HAL_UART_Transmit(&huart2, (uint8_t *)"MAGIC ERROR!!\r\n", 15, 100);
+		  break;
+
+	  case 2:
+		  HAL_UART_Transmit(&huart2, (uint8_t *)"RESET ERROR!!\r\n", 15, 100);
+		  break;
+
+	  case 3:
+		  HAL_UART_Transmit(&huart2, (uint8_t *)"SIZE ERROR!!\r\n", 14, 100);
+		  break;
+
+	  case 4:
+		  HAL_UART_Transmit(&huart2, (uint8_t *)"CRC ERROR!!\r\n", 13, 100);
+		  break;
+
+	  default:
+		  HAL_UART_Transmit(&huart2, (uint8_t *)"ERROR!!\r\n", 9, 100);
+		  break;
+	  }
+
+	  while (1)
+	  {
+		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+		  HAL_Delay(100);
+	  }
+  }
+
+  JumpToApplication();
 
   /* USER CODE END 2 */
-  JumpToApplication();
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -104,8 +171,6 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
-	  HAL_Delay(100);
   }
   /* USER CODE END 3 */
 }
@@ -122,7 +187,7 @@ void SystemClock_Config(void)
   /** Configure the main internal regulator output voltage
   */
   __HAL_RCC_PWR_CLK_ENABLE();
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE3);
 
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
@@ -200,10 +265,16 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : PA6 */
-  GPIO_InitStruct.Pin = GPIO_PIN_6;
+  /*Configure GPIO pin : PA1 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_5;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
