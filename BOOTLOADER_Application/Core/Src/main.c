@@ -18,12 +18,12 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include"flash_layout.h"
-
-
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include"flash_layout.h"
+#include"app_header.h"
+#include"app_ota.h"
 
 /* USER CODE END Includes */
 
@@ -59,6 +59,21 @@ static void MX_USART2_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+__attribute__((section(".header")))const app_header_t app_header =
+{
+		.ota_flag = 0,
+		.magic = 0xABCDEFAB,
+		.size = 0,
+		.crc = 0,
+		.version = 0
+};
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    uint32_t wait = 1000;
+    while(wait--);
+    enable_ota_request();
+}
 
 /* USER CODE END 0 */
 
@@ -98,7 +113,7 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   HAL_Delay(100);
-  HAL_UART_Transmit(&huart2, (uint8_t*)"Inside Application!!\r\n", 22, 100);
+  HAL_UART_Transmit(&huart2, (uint8_t*)"Inside Test Application!!\r\n", 28, 100);
 
 
   /* USER CODE END 2 */
@@ -220,6 +235,16 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA8 */
+  GPIO_InitStruct.Pin = GPIO_PIN_8;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
